@@ -39,7 +39,7 @@ def get_dependency_metrics_model1(
                 percentile_rank,
                 run_date,
                 ROW_NUMBER() OVER (PARTITION BY dependency_id ORDER BY run_date DESC) AS rn
-            FROM `my_dataset.s3d_model_1`
+            FROM `s3d_dura_data.s3d_model_1`
             WHERE dependency_id IN UNNEST(@dependency_ids)
         )
         SELECT dependency_id, relative_distribution, percentile_rank, run_date
@@ -101,7 +101,7 @@ def get_dependency_metrics_model2(
                         PARTITION BY dependency_name, dependency_version
                         ORDER BY run_date DESC
                     ) AS rn
-                FROM `my_dataset.s3d_model_2`
+                FROM `s3d_dura_data.s3d_model_2`
                 WHERE (dependency_name, dependency_version) IN UNNEST(@pairs)
             )
             SELECT dependency_name, dependency_version, relative_distribution, percentile_rank, run_date
@@ -136,7 +136,7 @@ def get_dependency_metrics_model2(
                         PARTITION BY dependency_name
                         ORDER BY run_date DESC
                     ) AS rn
-                FROM `my_dataset.s3d_model_2`
+                FROM `s3d_dura_data.s3d_model_2`
                 WHERE dependency_name IN UNNEST(@dependency_names)
             )
             SELECT dependency_name, relative_distribution, percentile_rank, run_date
