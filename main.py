@@ -70,9 +70,6 @@ def get_dependency_metrics_model1(
 # -----------------------
 # s3d_model_2 Endpoint 
 # -----------------------
-# -----------------------
-# s3d_model_2 Endpoint (robust version)
-# -----------------------
 @app.get("/s3d_model_2/metrics")
 def get_dependency_metrics_model2(
     dependency_names: Union[str, List[str]] = Query(..., description="One or more dependency names"),
@@ -85,7 +82,7 @@ def get_dependency_metrics_model2(
       - relative_distribution, percentile_rank           (name-level)
       - relative_distribution_version, percentile_rank_version (version-level)
     Always returns the latest run_date per dependency.
-    If versions are not provided, version fields come back as null.
+    If versions are not provided, version fields come back as null to keep the schema consistent.
     """
 
     # Normalize inputs
@@ -97,49 +94,54 @@ def get_dependency_metrics_model2(
     if dependency_versions and len(dependency_names) != len(dependency_versions):
         raise HTTPException(
             status_code=400,
-            detail="If dependency_versions are provided, they must match the number of dependency_names."
+            detail="If dependency_versions are provided, they must match the number of dependency_names.",
         )
 
     if dependency_versions:
-        # Query by (name, version) pairs
+        # Use separate arrays instead of STRUCTs
+        names_array = dependency_names
+        versions_array = dependency_versions
+
         query = """
-            WITH ranked AS (
+            WITH params AS (
+                SELECT name, version
+                FROM UNNEST(@names) AS name WITH OFFSET
+                JOIN UNNEST(@versions) AS version WITH OFFSET USING(OFFSET)
+            ),
+            ranked AS (
                 SELECT
-                    dependency_name,
-                    dependency_version,
+                    t.dependency_name,
+                    t.dependency_version,
                     relative_distribution_name AS relative_distribution,
                     percentile_rank_name AS percentile_rank,
                     relative_distribution_version AS relative_distribution_version,
                     percentile_rank_version AS percentile_rank_version,
                     run_date,
                     ROW_NUMBER() OVER (
-                        PARTITION BY dependency_name, dependency_version
+                        PARTITION BY t.dependency_name, t.dependency_version
                         ORDER BY run_date DESC
                     ) AS rn
-                FROM `s3d_dura_data.s3d_model_2`
-                WHERE (dependency_name, dependency_version) IN UNNEST(@pairs)
+                FROM `s3d_dura_data.s3d_model_2` t
+                JOIN params p
+                ON t.dependency_name = p.name AND t.dependency_version = p.version
             )
             SELECT *
             FROM ranked
             WHERE rn = 1
         """
 
-        # Build array of dicts for query
-        pairs = [{"dependency_name": n, "dependency_version": v} for n, v in zip(dependency_names, dependency_versions)]
         job = client.query(
             query,
             job_config=bigquery.QueryJobConfig(
                 query_parameters=[
-                    bigquery.ArrayQueryParameter(
-                        "pairs",
-                        "STRUCT<dependency_name STRING, dependency_version STRING>",
-                        pairs,
-                    )
+                    bigquery.ArrayQueryParameter("names", "STRING", names_array),
+                    bigquery.ArrayQueryParameter("versions", "STRING", versions_array),
                 ]
-            )
+            ),
         )
+
     else:
-        # Query by name only, NULL version metrics
+        # Query by name only; include name-level metrics and NULLs for version-level metrics
         query = """
             WITH ranked AS (
                 SELECT
@@ -161,13 +163,14 @@ def get_dependency_metrics_model2(
             FROM ranked
             WHERE rn = 1
         """
+
         job = client.query(
             query,
             job_config=bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ArrayQueryParameter("dependency_names", "STRING", dependency_names)
                 ]
-            )
+            ),
         )
 
     results = [dict(row) for row in job]
