@@ -68,7 +68,7 @@ def get_dependency_metrics_model1(
 
 
 # -----------------------
-# s3d_model_2 Endpoint 
+# s3d_model_2 Endpoint version 1.1
 # -----------------------
 @app.get("/s3d_model_2/metrics")
 def get_dependency_metrics_model2(
