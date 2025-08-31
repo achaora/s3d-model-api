@@ -68,19 +68,28 @@ def get_dependency_metrics_model1(
 
 
 # -----------------------
-# s3d_model_2 Endpoint
+# s3d_model_2 Endpoint 
 # -----------------------
 @app.get("/s3d_model_2/metrics")
 def get_dependency_metrics_model2(
-    dependency_names: List[str] = Query(..., description="One or more dependency names"),
-    dependency_versions: Optional[List[str]] = Query(
+    dependency_names: Union[str, List[str]] = Query(..., description="One or more dependency names"),
+    dependency_versions: Optional[Union[str, List[str]]] = Query(
         None, description="Optional versions (must align with names if provided)"
     )
 ):
     """
-    Retrieve relative_distribution and percentile_rank
-    for dependency name OR (name + version) using the most recent run_date(s) (s3d_model_2).
+    Returns BOTH sets of metrics:
+      - relative_distribution, percentile_rank           (name-level)
+      - relative_distribution_version, percentile_rank_version (version-level)
+    Always returns the latest run_date per dependency.
+    If versions are not provided, version fields come back as null to keep the schema consistent.
     """
+
+    # Normalize inputs
+    if isinstance(dependency_names, str):
+        dependency_names = [dependency_names]
+    if dependency_versions and isinstance(dependency_versions, str):
+        dependency_versions = [dependency_versions]
 
     if dependency_versions and len(dependency_names) != len(dependency_versions):
         raise HTTPException(
@@ -89,13 +98,18 @@ def get_dependency_metrics_model2(
         )
 
     if dependency_versions:
+        # Query by (name, version) pairs; return BOTH name-level and version-level metrics
         query = """
             WITH ranked AS (
                 SELECT
                     dependency_name,
                     dependency_version,
-                    relative_distribution_version AS relative_distribution,
-                    percentile_rank_version AS percentile_rank,
+                    -- name-level metrics
+                    relative_distribution_name AS relative_distribution,
+                    percentile_rank_name       AS percentile_rank,
+                    -- version-level metrics
+                    relative_distribution_version AS relative_distribution_version,
+                    percentile_rank_version       AS percentile_rank_version,
                     run_date,
                     ROW_NUMBER() OVER (
                         PARTITION BY dependency_name, dependency_version
@@ -104,12 +118,16 @@ def get_dependency_metrics_model2(
                 FROM `s3d_dura_data.s3d_model_2`
                 WHERE (dependency_name, dependency_version) IN UNNEST(@pairs)
             )
-            SELECT dependency_name, dependency_version, relative_distribution, percentile_rank, run_date
+            SELECT dependency_name, dependency_version,
+                   relative_distribution, percentile_rank,
+                   relative_distribution_version, percentile_rank_version,
+                   run_date
             FROM ranked
             WHERE rn = 1
         """
 
-        pairs = [{"dependency_name": n, "dependency_version": v} for n, v in zip(dependency_names, dependency_versions)]
+        pairs = [{"dependency_name": n, "dependency_version": v}
+                 for n, v in zip(dependency_names, dependency_versions)]
 
         job = client.query(
             query,
@@ -125,12 +143,18 @@ def get_dependency_metrics_model2(
         )
 
     else:
+        # Query by name only; include name-level metrics and NULLs for version-level metrics to keep schema stable
         query = """
             WITH ranked AS (
                 SELECT
                     dependency_name,
+                    CAST(NULL AS STRING) AS dependency_version,
+                    -- name-level metrics
                     relative_distribution_name AS relative_distribution,
-                    percentile_rank_name AS percentile_rank,
+                    percentile_rank_name       AS percentile_rank,
+                    -- keep schema consistent with NULLs for version-level
+                    CAST(NULL AS FLOAT64) AS relative_distribution_version,
+                    CAST(NULL AS FLOAT64) AS percentile_rank_version,
                     run_date,
                     ROW_NUMBER() OVER (
                         PARTITION BY dependency_name
@@ -139,7 +163,10 @@ def get_dependency_metrics_model2(
                 FROM `s3d_dura_data.s3d_model_2`
                 WHERE dependency_name IN UNNEST(@dependency_names)
             )
-            SELECT dependency_name, relative_distribution, percentile_rank, run_date
+            SELECT dependency_name, dependency_version,
+                   relative_distribution, percentile_rank,
+                   relative_distribution_version, percentile_rank_version,
+                   run_date
             FROM ranked
             WHERE rn = 1
         """
