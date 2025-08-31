@@ -17,7 +17,7 @@ def health_check():
 
 
 # -----------------------
-# s3d_model_1 Endpoint
+# s3d_model_1 Endpoint - version 1.1
 # -----------------------
 @app.get("/s3d_model_1/metrics")
 def get_dependency_metrics_model1(
