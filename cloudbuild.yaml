@@ -14,7 +14,7 @@ steps:
       - run
       - deploy
       - s3d-models-api           # Cloud Run service name
-      - --image=gcr.io/$PROJECT_ID/s3d-models-api
+      - --image=gcr.io/$PROJECT_ID/s3d-models-api:latest
       - --platform=managed
       - --region=us-east5 
       - --allow-unauthenticated
