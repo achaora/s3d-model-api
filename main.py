@@ -101,6 +101,7 @@ def get_dependency_metrics_model2(
     # -----------------------
     if dependency_versions:
         pairs = [(n, v) for n, v in zip(dependency_names, dependency_versions)]
+        print(f"[DEBUG] Querying s3d_model_2 with pairs={pairs}")
 
         query = """
             WITH ranked AS (
@@ -146,6 +147,8 @@ def get_dependency_metrics_model2(
     # Query if only names provided
     # -----------------------
     else:
+        print(f"[DEBUG] Querying s3d_model_2 with names={dependency_names}")
+
         query = """
             WITH ranked AS (
                 SELECT
@@ -184,6 +187,8 @@ def get_dependency_metrics_model2(
     # Results
     # -----------------------
     results = [dict(row) for row in job]
+
+    print(f"[DEBUG] Query results count={len(results)}")
 
     if not results:
         raise HTTPException(status_code=404, detail="No matching dependencies found")
