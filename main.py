@@ -103,8 +103,20 @@ def get_dependency_metrics_model2(
 
         if dependency_versions:
             # Build pairs
-            pairs = [{"dependency_name": n, "dependency_version": v}
-                     for n, v in zip(dependency_names, dependency_versions)]
+            pairs = [(n, v) for n, v in zip(dependency_names, dependency_versions)]
+
+            job = client.query(
+                query,
+                job_config=bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ArrayQueryParameter(
+                            "pairs",
+                            "STRUCT<dependency_name STRING, dependency_version STRING>",
+                            pairs,
+                        )
+                    ]
+                ),
+            )
 
             print("DEBUG >>> pairs:", pairs)
 
