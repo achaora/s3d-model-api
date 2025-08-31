@@ -3,9 +3,25 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/s3d-models-api', '.']
 
-  # Step 2: (Optional) Push the image to Google Container Registry
+  # Step 2: Push the Docker image to Google Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/s3d-models-api']
 
-# Timeout can be adjusted as needed
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - s3d-models-api           # Cloud Run service name
+      - --image=gcr.io/$PROJECT_ID/s3d-models-api
+      - --platform=managed
+      - --region=us-east5 
+      - --allow-unauthenticated
+      - --port=8080
+
 timeout: '1200s'
+
+substitutions:
+  _SERVICE_NAME: 's3d-models-api'
+  _REGION: 'us-east5'

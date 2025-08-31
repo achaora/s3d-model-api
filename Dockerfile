@@ -1,7 +1,12 @@
-# Use official Python 3.12 slim image
+# Use official Python image
 FROM python:3.12-slim
 
-# Set working directory
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8080
+
+# Set work directory
 WORKDIR /app
 
 # Copy requirements first for caching
@@ -9,13 +14,13 @@ COPY requirements.txt .
 
 # Install dependencies
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the app
-COPY main.py .
+# Copy app code
+COPY . .
 
-# Expose the port FastAPI will run on
+# Expose the port for Cloud Run
 EXPOSE 8080
 
-# Run the app with Uvicorn
+# Run the app with uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
