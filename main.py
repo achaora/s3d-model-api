@@ -87,7 +87,6 @@ def get_dependency_metrics_model2(
     Always returns the latest run_date per dependency.
     If versions are not provided, version fields come back as null to keep the schema consistent.
     """
-    import traceback
 
     # Normalize inputs
     if isinstance(dependency_names, str):
@@ -95,113 +94,85 @@ def get_dependency_metrics_model2(
     if dependency_versions and isinstance(dependency_versions, str):
         dependency_versions = [dependency_versions]
 
-    # Check alignment
     if dependency_versions and len(dependency_names) != len(dependency_versions):
         raise HTTPException(
             status_code=400,
             detail="If dependency_versions are provided, they must match the number of dependency_names.",
         )
 
-    try:
-        if dependency_versions:
-            # Ensure all versions are strings
-            dependency_versions = [str(v) for v in dependency_versions]
+    if dependency_versions:
+        # Build dynamic OR conditions for each (name, version) pair
+        filters = []
+        query_params = []
+        for i, (name, version) in enumerate(zip(dependency_names, dependency_versions)):
+            filters.append(f"(dependency_name=@name{i} AND dependency_version=@version{i})")
+            query_params.append(bigquery.ScalarQueryParameter(f"name{i}", "STRING", name))
+            query_params.append(bigquery.ScalarQueryParameter(f"version{i}", "STRING", version))
 
-            # Build pairs as STRUCT-compatible dicts
-            pairs = [{"dependency_name": str(n), "dependency_version": str(v)}
-                     for n, v in zip(dependency_names, dependency_versions)]
-
-            print("Pairs being sent to BigQuery:", pairs)
-
-            query = """
-                WITH ranked AS (
-                    SELECT
-                        dependency_name,
-                        dependency_version,
-                        relative_distribution_name AS relative_distribution,
-                        percentile_rank_name       AS percentile_rank,
-                        relative_distribution_version AS relative_distribution_version,
-                        percentile_rank_version       AS percentile_rank_version,
-                        run_date,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY dependency_name, dependency_version
-                            ORDER BY run_date DESC
-                        ) AS rn
-                    FROM `s3d_dura_data.s3d_model_2`
-                    WHERE (dependency_name, dependency_version) IN UNNEST(@pairs)
-                )
-                SELECT dependency_name, dependency_version,
-                       relative_distribution, percentile_rank,
-                       relative_distribution_version, percentile_rank_version,
-                       run_date
-                FROM ranked
-                WHERE rn = 1
-            """
-
-            job = client.query(
-                query,
-                job_config=bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ArrayQueryParameter(
-                            "pairs",
-                            "STRUCT<dependency_name STRING, dependency_version STRING>",
-                            pairs,
-                        )
-                    ]
-                ),
-            )
-
-        else:
-            # Query by name only; version-level metrics come back as NULL
-            query = """
-                WITH ranked AS (
-                    SELECT
-                        dependency_name,
-                        CAST(NULL AS STRING) AS dependency_version,
-                        relative_distribution_name AS relative_distribution,
-                        percentile_rank_name       AS percentile_rank,
-                        CAST(NULL AS FLOAT64) AS relative_distribution_version,
-                        CAST(NULL AS FLOAT64) AS percentile_rank_version,
-                        run_date,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY dependency_name
-                            ORDER BY run_date DESC
-                        ) AS rn
-                    FROM `s3d_dura_data.s3d_model_2`
-                    WHERE dependency_name IN UNNEST(@dependency_names)
-                )
-                SELECT dependency_name, dependency_version,
-                       relative_distribution, percentile_rank,
-                       relative_distribution_version, percentile_rank_version,
-                       run_date
-                FROM ranked
-                WHERE rn = 1
-            """
-
-            job = client.query(
-                query,
-                job_config=bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ArrayQueryParameter("dependency_names", "STRING", dependency_names)
-                    ]
-                ),
-            )
-
-        results = [dict(row) for row in job]
-
-        if not results:
-            raise HTTPException(status_code=404, detail="No matching dependencies found")
-
-        # Convert dates to string
-        for r in results:
-            r["run_date"] = str(r["run_date"])
-
-        return results
-
-    except Exception as e:
-        print("Query error:", e)
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal error. Debug info: names={dependency_names}, versions={dependency_versions}, error={str(e)}"
+        query = f"""
+        WITH ranked AS (
+            SELECT
+                dependency_name,
+                dependency_version,
+                relative_distribution_name AS relative_distribution,
+                percentile_rank_name AS percentile_rank,
+                relative_distribution_version,
+                percentile_rank_version,
+                run_date,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dependency_name, dependency_version
+                    ORDER BY run_date DESC
+                ) AS rn
+            FROM `s3d_dura_data.s3d_model_2`
+            WHERE {" OR ".join(filters)}
         )
+        SELECT *
+        FROM ranked
+        WHERE rn = 1
+        """
+
+        job = client.query(
+            query,
+            job_config=bigquery.QueryJobConfig(query_parameters=query_params)
+        )
+
+    else:
+        # Query by name only; include name-level metrics and NULLs for version-level
+        query = """
+        WITH ranked AS (
+            SELECT
+                dependency_name,
+                CAST(NULL AS STRING) AS dependency_version,
+                relative_distribution_name AS relative_distribution,
+                percentile_rank_name AS percentile_rank,
+                CAST(NULL AS FLOAT64) AS relative_distribution_version,
+                CAST(NULL AS FLOAT64) AS percentile_rank_version,
+                run_date,
+                ROW_NUMBER() OVER (
+                    PARTITION BY dependency_name
+                    ORDER BY run_date DESC
+                ) AS rn
+            FROM `s3d_dura_data.s3d_model_2`
+            WHERE dependency_name IN UNNEST(@dependency_names)
+        )
+        SELECT *
+        FROM ranked
+        WHERE rn = 1
+        """
+
+        job = client.query(
+            query,
+            job_config=bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ArrayQueryParameter("dependency_names", "STRING", dependency_names)]
+            )
+        )
+
+    results = [dict(row) for row in job]
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No matching dependencies found")
+
+    for r in results:
+        r["run_date"] = str(r["run_date"])
+
+    return results
