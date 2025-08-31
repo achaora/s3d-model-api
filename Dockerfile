@@ -1,28 +1,21 @@
-# Use an official Python runtime as a parent image
+# Use official Python 3.12 slim image
 FROM python:3.12-slim
 
-# Set environment vars for Python
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Install system deps (useful for building wheels, curl for healthchecks)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set workdir
+# Set working directory
 WORKDIR /app
 
-# Install dependencies
+# Copy requirements first for caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app source
-COPY . .
+# Install dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
 
-# Expose port
+# Copy the rest of the app
+COPY main.py .
+
+# Expose the port FastAPI will run on
 EXPOSE 8080
 
-# Run the app with uvicorn
+# Run the app with Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
