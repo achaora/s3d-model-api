@@ -82,36 +82,38 @@ def get_dependency_metrics_model2(
       - relative_distribution, percentile_rank           (name-level)
       - relative_distribution_version, percentile_rank_version (version-level)
     Always returns the latest run_date per dependency.
+    If versions are not provided, version fields come back as null to keep the schema consistent.
     """
 
-    # Normalize inputs
+    # Normalize inputs to lists of strings
     if isinstance(dependency_names, str):
         dependency_names = [dependency_names]
-    if dependency_versions and isinstance(dependency_versions, str):
-        dependency_versions = [dependency_versions]
+    dependency_names = [str(n) for n in dependency_names]
 
-    if dependency_versions and len(dependency_names) != len(dependency_versions):
-        raise HTTPException(
-            status_code=400,
-            detail="If dependency_versions are provided, they must match the number of dependency_names.",
-        )
-
-    # -----------------------
-    # Query if versions provided
-    # -----------------------
     if dependency_versions:
-        pairs = [(n, v) for n, v in zip(dependency_names, dependency_versions)]
-        print(f"[DEBUG] Querying s3d_model_2 with pairs={pairs}")
+        if isinstance(dependency_versions, str):
+            dependency_versions = [dependency_versions]
+        dependency_versions = [str(v) for v in dependency_versions]
+
+        if len(dependency_names) != len(dependency_versions):
+            raise HTTPException(
+                status_code=400,
+                detail="If dependency_versions are provided, they must match the number of dependency_names.",
+            )
+
+        # Build list of structs for BigQuery
+        pairs = [
+            {"dependency_name": n, "dependency_version": v}
+            for n, v in zip(dependency_names, dependency_versions)
+        ]
 
         query = """
             WITH ranked AS (
                 SELECT
                     dependency_name,
                     dependency_version,
-                    -- name-level metrics
                     relative_distribution_name AS relative_distribution,
                     percentile_rank_name       AS percentile_rank,
-                    -- version-level metrics
                     relative_distribution_version AS relative_distribution_version,
                     percentile_rank_version       AS percentile_rank_version,
                     run_date,
@@ -143,12 +145,8 @@ def get_dependency_metrics_model2(
             ),
         )
 
-    # -----------------------
-    # Query if only names provided
-    # -----------------------
     else:
-        print(f"[DEBUG] Querying s3d_model_2 with names={dependency_names}")
-
+        # Query by name only
         query = """
             WITH ranked AS (
                 SELECT
@@ -183,12 +181,7 @@ def get_dependency_metrics_model2(
             ),
         )
 
-    # -----------------------
-    # Results
-    # -----------------------
     results = [dict(row) for row in job]
-
-    print(f"[DEBUG] Query results count={len(results)}")
 
     if not results:
         raise HTTPException(status_code=404, detail="No matching dependencies found")
