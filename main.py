@@ -17,7 +17,7 @@ def health_check():
 
 
 # -----------------------
-# s3d_model_1 Endpoint - version 1.1
+# s3d_model_1 Endpoint 
 # -----------------------
 @app.get("/s3d_model_1/metrics")
 def get_dependency_metrics_model1(
@@ -68,7 +68,7 @@ def get_dependency_metrics_model1(
 
 
 # -----------------------
-# s3d_model_2 Endpoint
+# s3d_model_2 Endpoint 
 # -----------------------
 @app.get("/s3d_model_2/metrics")
 def get_dependency_metrics_model2(
@@ -98,7 +98,7 @@ def get_dependency_metrics_model2(
         )
 
     if dependency_versions:
-        # Query by (name, version) pairs; return BOTH name-level and version-level metrics
+        # Query by (name, version) pairs; return BOTH name-level and version-level metrics from api
         query = """
             WITH ranked AS (
                 SELECT
