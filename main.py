@@ -126,8 +126,7 @@ def get_dependency_metrics_model2(
             WHERE rn = 1
         """
 
-        pairs = [{"dependency_name": n, "dependency_version": v}
-                 for n, v in zip(dependency_names, dependency_versions)]
+        pairs = [(n, v) for n, v in zip(dependency_names, dependency_versions)]
 
         job = client.query(
             query,
